@@ -19,6 +19,7 @@ import (
 )
 
 func TestRunExecutesTheAgentenvCommand(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	profileRoot := filepath.Join(t.TempDir(), "profiles")
 	t.Setenv("AGENTENV_HOME", profileRoot)
 

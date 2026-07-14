@@ -2,7 +2,97 @@
 
 `agentenv` keeps separate user-level environments for Codex and Claude Code and
 selects one per project. The globally installed `codex` and `claude` binaries
-stay untouched.
+stay untouched. Each profile has its own filesystem-backed configuration,
+skills, plugins, and instruction files, while OAuth authentication is shared
+between profiles.
+
+## Install
+
+Go 1.24 or newer is required to build from source.
+
+From a local checkout, run:
+
+```sh
+cd /path/to/agentenv
+go install ./cmd/agentenv
+```
+
+Go installs the executable into `GOBIN`, or into `$(go env GOPATH)/bin` when
+`GOBIN` is unset. Make sure that directory is on `PATH` before running
+`agentenv`.
+
+After the repository is published as a Go module, it can also be installed by
+module path:
+
+```sh
+go install github.com/ravan/agentenv/cmd/agentenv@latest
+```
+
+Codex and/or Claude Code must already be installed and available on `PATH`.
+
+## Quick start
+
+Create a `default` profile and any specialized profiles you want. Each starts
+with private agent state, while OAuth remains shared between them:
+
+```sh
+agentenv new default
+agentenv new superpowers
+agentenv list
+```
+
+From a project directory, select a profile and launch an agent:
+
+```sh
+agentenv use superpowers
+agentenv current
+agentenv codex
+agentenv claude --permission-mode plan
+```
+
+`activate` is an alias for `use`. The `.agentenv` file contains only the profile
+name. Keep it in the repository when the selection is shared by the project, or
+add it to the project's ignore file when it is personal. A selection affects
+future launches only: an already-running agent keeps the profile it started
+with. Restart agents after changing profiles.
+
+Verify the environment from a newly launched profiled session. Each agent has a
+matching configuration variable, and both share the composed `HOME`:
+
+```sh
+printf '%s\n' "$CODEX_HOME"          # agentenv codex
+printf '%s\n' "$CLAUDE_CONFIG_DIR"   # agentenv claude
+printf '%s\n' "$HOME"                # both
+```
+
+`CODEX_HOME` must name `<profile-root>/<profile>/codex`, `CLAUDE_CONFIG_DIR`
+must name `<profile-root>/<profile>/claude`, and `HOME` must name
+`<profile-root>/<profile>/home`. If a relevant variable is empty or points to
+the real home, exit immediately and correct the launcher.
+
+Use the default profile whenever you want a clean baseline:
+
+```sh
+agentenv use default
+```
+
+Global agent settings and onboarding state are not copied into profiles.
+Install and configure filesystem-backed skills or plugins from a wrapped agent
+session; they are then written beneath that profile's Codex, Claude, or
+`.agents` directory. Plugins or skills already present in the real `~/.codex`,
+`~/.claude`, or `~/.agents` are not imported. Reinstall the ones wanted in each
+profile. Codex account-backed remote plugins are the exception described below.
+
+Delete a profile when it is no longer needed:
+
+```sh
+agentenv delete security-review
+```
+
+Deletion removes the profile's complete Codex, Claude, `.agents`, and composed
+home trees. It does not remove the shared OAuth store.
+
+## How it works
 
 When an agent is launched, `agentenv` searches the current directory and its
 parents for a `.agentenv` selection, then sets the matching configuration root
@@ -30,30 +120,6 @@ authentication is shared.
 > account state into every `CODEX_HOME` using the same OAuth identity.
 > Environment-variable and filesystem isolation cannot make those remote
 > installations profile-specific. See [Codex remote plugins](#codex-remote-plugins).
-
-## Install
-
-Go 1.24 or newer is required to build from source.
-
-From a local checkout, run:
-
-```sh
-cd /path/to/agentenv
-go install ./cmd/agentenv
-```
-
-Go installs the executable into `GOBIN`, or into `$(go env GOPATH)/bin` when
-`GOBIN` is unset. Make sure that directory is on `PATH` before running
-`agentenv`.
-
-After the repository is published as a Go module, it can also be installed by
-module path:
-
-```sh
-go install github.com/ravan/agentenv/cmd/agentenv@latest
-```
-
-Codex and/or Claude Code must already be installed and available on `PATH`.
 
 ## Strict laptop setup
 
@@ -131,6 +197,48 @@ Review and trust the hook when Codex first reports it. The guard allows global
 Codex sessions in directories without an `.agentenv` selection, but fails
 closed when a selected project is launched with the wrong profile environment.
 
+### Reject accidental global Claude launches
+
+Claude Code supports `SessionStart` hooks. The same guard stops a session when
+its working directory selects an agentenv profile but its `CLAUDE_CONFIG_DIR`
+or `HOME` does not match that profile.
+
+First find the absolute executable path:
+
+```sh
+command -v agentenv
+```
+
+Then add this entry to the real `~/.claude/settings.json`, replacing
+`/absolute/path/to/agentenv` with that path. If the file already contains hooks,
+merge this `SessionStart` entry instead of replacing them.
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/absolute/path/to/agentenv guard claude"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The guard allows global Claude sessions in directories without an `.agentenv`
+selection, but fails closed when a selected project is launched with the wrong
+profile environment. As with Codex, configure Claude Code launchers — IDEs,
+desktop applications, terminal managers, and automation — as `agentenv claude`,
+or launch their wrapper with `agentenv run claude -- ...`. A launcher that
+executes an absolute Claude binary bypasses agentenv and cannot provide profile
+isolation.
+
 ### cmux
 
 cmux currently records and resumes Codex by its absolute binary path. That
@@ -154,67 +262,6 @@ The same rule applies to IDEs, desktop applications, terminal managers, and
 automation: configure their Codex command as `agentenv codex`, or launch their
 wrapper with `agentenv run codex -- ...`. A launcher that executes an absolute
 Codex binary bypasses agentenv and cannot provide profile isolation.
-
-## Quick start
-
-Create a `default` profile and any specialized profiles you want. Each starts
-with private agent state, while OAuth remains shared between them:
-
-```sh
-agentenv new default
-agentenv new superpowers
-agentenv list
-```
-
-From a project directory, select a profile and launch an agent:
-
-```sh
-agentenv use superpowers
-agentenv current
-agentenv codex
-agentenv claude --permission-mode plan
-```
-
-`activate` is an alias for `use`. The `.agentenv` file contains only the profile
-name. Keep it in the repository when the selection is shared by the project, or
-add it to the project's ignore file when it is personal. A selection affects
-future launches only: an already-running agent keeps the profile it started
-with. Restart agents after changing profiles.
-
-Verify the environment from a newly launched profiled session:
-
-```sh
-printf '%s\n' "$CODEX_HOME"
-printf '%s\n' "$CLAUDE_CONFIG_DIR"
-printf '%s\n' "$HOME"
-```
-
-`CODEX_HOME` must name `<profile-root>/<profile>/codex`, and `HOME` must name
-`<profile-root>/<profile>/home`. For Claude Code, `CLAUDE_CONFIG_DIR` must name
-`<profile-root>/<profile>/claude`. If a relevant variable is empty or points to
-the real home, exit immediately and correct the launcher.
-
-Use the default profile whenever you want a clean baseline:
-
-```sh
-agentenv use default
-```
-
-Global Claude settings and onboarding state are not copied into profiles.
-Install and configure filesystem-backed skills or plugins from a wrapped agent
-session; they are then written beneath that profile's Codex, Claude, or
-`.agents` directory. Plugins or skills already present in the real `~/.codex`,
-`~/.claude`, or `~/.agents` are not imported. Reinstall the ones wanted in each
-profile. Codex account-backed remote plugins are the exception described below.
-
-Delete a profile when it is no longer needed:
-
-```sh
-agentenv delete security-review
-```
-
-Deletion removes the profile's complete Codex, Claude, `.agents`, and composed
-home trees. It does not remove the shared OAuth store.
 
 ## Codex remote plugins
 
