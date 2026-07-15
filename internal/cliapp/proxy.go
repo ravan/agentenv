@@ -45,7 +45,9 @@ func proxyCommand(options Options) *cli.Command {
 					if err := profile.SaveConfig(profilePath, config); err != nil {
 						return err
 					}
-					_, err = fmt.Fprintf(options.Stdout, "Set %s proxy %s for profile %s\n", tool, proxyURL, active)
+					style := newStyler(options.Stdout)
+					_, err = fmt.Fprintln(options.Stdout, style.ok(fmt.Sprintf(
+						"Set %s proxy %s for profile %s", tool, style.cyan(proxyURL), style.bold(active))))
 					return err
 				},
 			},
@@ -73,7 +75,9 @@ func proxyCommand(options Options) *cli.Command {
 					if err := profile.SaveConfig(profilePath, config); err != nil {
 						return err
 					}
-					_, err = fmt.Fprintf(options.Stdout, "Removed %s proxy for profile %s\n", tool, active)
+					style := newStyler(options.Stdout)
+					_, err = fmt.Fprintln(options.Stdout, style.ok(fmt.Sprintf(
+						"Removed %s proxy for profile %s", tool, style.bold(active))))
 					return err
 				},
 			},

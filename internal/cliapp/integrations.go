@@ -16,6 +16,9 @@ import (
 // invocations, one per agent home. The installers resolve every path through
 // HOME (or the agent home variables), so running them inside the profile
 // environment writes to the profile instead of the real global config.
+// integrationTools lists the supported helper tools in display order.
+var integrationTools = []string{"rtk", "tokensave"}
+
 var integrationSteps = map[string]map[string][][]string{
 	"rtk": {
 		"enable": {
@@ -53,18 +56,28 @@ func integrationCommand(action string, options Options) *cli.Command {
 			if !ok {
 				return fmt.Errorf("unsupported tool %q", tool)
 			}
-			return runIntegrationSteps(ctx, steps, options)
+			active, profilePath, err := activeProfilePath(options)
+			if err != nil {
+				return err
+			}
+			if err := runIntegrationSteps(ctx, active, profilePath, steps, options); err != nil {
+				return err
+			}
+			config, err := profile.LoadConfig(profilePath)
+			if err != nil {
+				return err
+			}
+			if config.Integrations == nil {
+				config.Integrations = map[string]bool{}
+			}
+			config.Integrations[tool] = action == "enable"
+			return profile.SaveConfig(profilePath, config)
 		},
 	}
 }
 
-func runIntegrationSteps(ctx context.Context, steps [][]string, options Options) error {
+func runIntegrationSteps(ctx context.Context, active, profilePath string, steps [][]string, options Options) error {
 	store := options.store()
-	active, err := profile.FindActive(options.WorkingDir)
-	if err != nil {
-		return err
-	}
-	profilePath := store.Path(active)
 	environment := profile.ReplaceEnvironment(os.Environ(), "AGENTENV_HOME", options.ProfileRoot)
 	for _, agent := range profile.Agents {
 		home, err := store.AgentHome(active, agent.Name)

@@ -345,6 +345,11 @@ adds or removes their agent wiring in the selected profile. Integrations
 already present in the real `~/.claude` or `~/.codex` are not imported into
 profiles — enable them per profile.
 
+A successful enable or disable records the integration state in the
+profile's `config.json`, and `agentenv current` reports it alongside the
+proxy URLs. State changed outside agentenv (for example running `rtk init`
+by hand inside the profile) is not detected.
+
 ## Agent proxy URLs
 
 Each profile can route an agent's API traffic through a proxy or LLM gateway
@@ -457,7 +462,8 @@ agentenv list              list available profiles
 agentenv delete <name>     permanently remove a profile
 agentenv use <name>        select a profile in the current directory
 agentenv activate <name>   alias for use
-agentenv current           print the selection found from the current context
+agentenv current           summarize the active profile: name, rtk/tokensave
+                           integration state, and agent proxy URLs
 agentenv run <agent> -- <command> [args...]
                            run a wrapper inside the selected agent profile
 agentenv codex-plugin <command> [args...]

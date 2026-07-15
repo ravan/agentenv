@@ -9,7 +9,8 @@ import (
 
 // Config holds per-profile settings stored in <profile>/config.json.
 type Config struct {
-	Proxy map[string]string `json:"proxy,omitempty"`
+	Proxy        map[string]string `json:"proxy,omitempty"`
+	Integrations map[string]bool   `json:"integrations,omitempty"`
 }
 
 // LoadConfig reads the profile's configuration; a missing file means an

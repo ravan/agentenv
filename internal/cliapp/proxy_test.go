@@ -45,8 +45,8 @@ func TestProxySetStoresTheProxyURLForTheActiveProfile(t *testing.T) {
 			t.Fatalf("%s: %v", strings.Join(arguments, " "), err)
 		}
 	}
-	want := "Set codex proxy http://localhost:4000 for profile gateway\n" +
-		"Set claude proxy https://gateway.example.com/anthropic for profile gateway\n"
+	want := "✓ Set codex proxy http://localhost:4000 for profile gateway\n" +
+		"✓ Set claude proxy https://gateway.example.com/anthropic for profile gateway\n"
 	if got := stdout.String(); got != want {
 		t.Fatalf("stdout = %q, want %q", got, want)
 	}
@@ -168,7 +168,7 @@ func TestProxyUnsetRestoresTheInheritedEndpoint(t *testing.T) {
 	if err := command.Run(context.Background(), []string{"agentenv", "proxy", "unset", "codex"}); err != nil {
 		t.Fatalf("unset codex proxy: %v", err)
 	}
-	if got, want := stdout.String(), "Removed codex proxy for profile gateway\n"; got != want {
+	if got, want := stdout.String(), "✓ Removed codex proxy for profile gateway\n"; got != want {
 		t.Fatalf("stdout = %q, want %q", got, want)
 	}
 

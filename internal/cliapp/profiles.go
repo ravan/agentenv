@@ -3,6 +3,8 @@ package cliapp
 import (
 	"context"
 	"fmt"
+	"io"
+	"strings"
 
 	"github.com/ravan/agentenv/internal/profile"
 	"github.com/urfave/cli/v3"
@@ -33,7 +35,8 @@ func newCommand(options Options) *cli.Command {
 			if err := options.store().Create(name); err != nil {
 				return err
 			}
-			_, err = fmt.Fprintf(options.Stdout, "Created profile %s\n", name)
+			style := newStyler(options.Stdout)
+			_, err = fmt.Fprintln(options.Stdout, style.ok("Created profile "+style.bold(name)))
 			return err
 		},
 	}
@@ -71,7 +74,8 @@ func deleteCommand(options Options) *cli.Command {
 			if err := options.store().Delete(name); err != nil {
 				return err
 			}
-			_, err = fmt.Fprintf(options.Stdout, "Deleted profile %s\n", name)
+			style := newStyler(options.Stdout)
+			_, err = fmt.Fprintln(options.Stdout, style.ok("Deleted profile "+style.bold(name)))
 			return err
 		},
 	}
@@ -94,7 +98,8 @@ func useCommand(options Options) *cli.Command {
 			if err := profile.WriteSelection(options.WorkingDir, name); err != nil {
 				return fmt.Errorf("activate profile %q: %w", name, err)
 			}
-			_, err = fmt.Fprintf(options.Stdout, "Using profile %s\n", name)
+			style := newStyler(options.Stdout)
+			_, err = fmt.Fprintln(options.Stdout, style.ok("Using profile "+style.bold(name)))
 			return err
 		},
 	}
@@ -103,13 +108,43 @@ func useCommand(options Options) *cli.Command {
 func currentCommand(options Options) *cli.Command {
 	return &cli.Command{
 		Name:  "current",
-		Usage: "print the active profile",
+		Usage: "summarize the active profile",
 		Action: func(_ context.Context, _ *cli.Command) error {
 			active, err := profile.FindActive(options.WorkingDir)
 			if err != nil {
 				return err
 			}
-			_, err = fmt.Fprintln(options.Stdout, active)
+			config, err := profile.LoadConfig(options.store().Path(active))
+			if err != nil {
+				return err
+			}
+			style := newStyler(options.Stdout)
+			type row struct{ icon, label, value string }
+			var rows []row
+			for _, tool := range integrationTools {
+				value := style.dim("○ disabled")
+				if config.Integrations[tool] {
+					value = style.green("● enabled")
+				}
+				rows = append(rows, row{integrationIcons[tool], tool, value})
+			}
+			for _, agent := range profile.Agents {
+				value := style.dim("(not set)")
+				if proxyURL := config.Proxy[agent.Name]; proxyURL != "" {
+					value = style.cyan(proxyURL)
+				}
+				rows = append(rows, row{iconProxy, agent.Name + " proxy", value})
+			}
+			width := 0
+			for _, r := range rows {
+				width = max(width, len(r.label))
+			}
+			var output strings.Builder
+			output.WriteString(style.cyan(iconProfile) + " " + style.bold(active) + "\n")
+			for _, r := range rows {
+				fmt.Fprintf(&output, "  %s %-*s  %s\n", style.dim(r.icon), width, r.label, r.value)
+			}
+			_, err = io.WriteString(options.Stdout, output.String())
 			return err
 		},
 	}

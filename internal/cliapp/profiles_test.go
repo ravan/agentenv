@@ -36,7 +36,7 @@ func TestNewCreatesAnIsolatedProfile(t *testing.T) {
 		}
 	}
 
-	if got, want := stdout.String(), "Created profile superpowers\n"; got != want {
+	if got, want := stdout.String(), "✓ Created profile superpowers\n"; got != want {
 		t.Fatalf("stdout = %q, want %q", got, want)
 	}
 }
@@ -91,7 +91,7 @@ func TestDeleteRemovesAProfile(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(profileRoot, "old")); !os.IsNotExist(err) {
 		t.Fatalf("deleted profile still exists (stat error: %v)", err)
 	}
-	if got, want := stdout.String(), "Deleted profile old\n"; got != want {
+	if got, want := stdout.String(), "✓ Deleted profile old\n"; got != want {
 		t.Fatalf("stdout = %q, want %q", got, want)
 	}
 }
@@ -126,13 +126,14 @@ func TestUseActivatesAnExistingProfileForTheProject(t *testing.T) {
 	if got, want := string(selection), "superpowers\n"; got != want {
 		t.Fatalf("selection = %q, want %q", got, want)
 	}
-	if got, want := stdout.String(), "Using profile superpowers\n"; got != want {
+	if got, want := stdout.String(), "✓ Using profile superpowers\n"; got != want {
 		t.Fatalf("stdout = %q, want %q", got, want)
 	}
 }
 
 func TestCurrentPrintsTheProfileSelectedByAParentProject(t *testing.T) {
 	root := t.TempDir()
+	profileRoot := filepath.Join(root, "profiles")
 	projectRoot := filepath.Join(root, "project")
 	workingDir := filepath.Join(projectRoot, "nested")
 	if err := os.MkdirAll(workingDir, 0o750); err != nil {
@@ -143,11 +144,67 @@ func TestCurrentPrintsTheProfileSelectedByAParentProject(t *testing.T) {
 	}
 	var stdout bytes.Buffer
 
-	command := cliapp.New(cliapp.Options{WorkingDir: workingDir, Stdout: &stdout})
+	command := cliapp.New(cliapp.Options{
+		ProfileRoot: profileRoot,
+		WorkingDir:  workingDir,
+		Stdout:      &stdout,
+	})
 	if err := command.Run(context.Background(), []string{"agentenv", "current"}); err != nil {
 		t.Fatalf("show current profile: %v", err)
 	}
-	if got, want := stdout.String(), "security-review\n"; got != want {
+	want := " security-review\n" +
+		"   rtk           ○ disabled\n" +
+		"   tokensave     ○ disabled\n" +
+		"   codex proxy   (not set)\n" +
+		"   claude proxy  (not set)\n"
+	if got := stdout.String(); got != want {
+		t.Fatalf("stdout = %q, want %q", got, want)
+	}
+}
+
+func TestCurrentSummarizesIntegrationsAndProxies(t *testing.T) {
+	root := t.TempDir()
+	hostHome := filepath.Join(root, "host-home")
+	profileRoot := filepath.Join(root, "profiles")
+	projectRoot := filepath.Join(root, "project")
+	binDir := filepath.Join(root, "bin")
+	for _, path := range []string{hostHome, projectRoot, binDir} {
+		if err := os.MkdirAll(path, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(binDir, "rtk"), []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", hostHome)
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	var stdout bytes.Buffer
+	command := cliapp.New(cliapp.Options{
+		ProfileRoot: profileRoot,
+		WorkingDir:  projectRoot,
+		Stdout:      &stdout,
+	})
+	for _, arguments := range [][]string{
+		{"agentenv", "new", "superpowers"},
+		{"agentenv", "use", "superpowers"},
+		{"agentenv", "enable", "rtk"},
+		{"agentenv", "proxy", "set", "claude", "http://localhost:4000/anthropic"},
+	} {
+		if err := command.Run(context.Background(), arguments); err != nil {
+			t.Fatalf("%v: %v", arguments, err)
+		}
+	}
+	stdout.Reset()
+
+	if err := command.Run(context.Background(), []string{"agentenv", "current"}); err != nil {
+		t.Fatalf("show current profile: %v", err)
+	}
+	want := " superpowers\n" +
+		"   rtk           ● enabled\n" +
+		"   tokensave     ○ disabled\n" +
+		"   codex proxy   (not set)\n" +
+		"   claude proxy  http://localhost:4000/anthropic\n"
+	if got := stdout.String(); got != want {
 		t.Fatalf("stdout = %q, want %q", got, want)
 	}
 }
