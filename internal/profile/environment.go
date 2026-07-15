@@ -8,6 +8,11 @@ import (
 // ReplaceEnvironment returns environment with key set to value, removing any
 // previous occurrence.
 func ReplaceEnvironment(environment []string, key, value string) []string {
+	return append(RemoveEnvironment(environment, key), key+"="+value)
+}
+
+// RemoveEnvironment returns environment without any occurrence of key.
+func RemoveEnvironment(environment []string, key string) []string {
 	prefix := key + "="
 	result := make([]string, 0, len(environment)+1)
 	for _, variable := range environment {
@@ -15,7 +20,7 @@ func ReplaceEnvironment(environment []string, key, value string) []string {
 			result = append(result, variable)
 		}
 	}
-	return append(result, prefix+value)
+	return result
 }
 
 // PrivateHomeEnvironment points every home-locating variable a process might

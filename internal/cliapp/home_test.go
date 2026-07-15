@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -40,7 +41,11 @@ func TestNewCreatesOnlyPrivateReservedHomeEntries(t *testing.T) {
 	for _, entry := range entries {
 		names = append(names, entry.Name())
 	}
-	if got, want := strings.Join(names, ","), ".agents,.claude,.claude.json,.codex"; got != want {
+	want := ".agents,.claude,.claude.json,.codex"
+	if runtime.GOOS == "darwin" {
+		want += ",Library"
+	}
+	if got := strings.Join(names, ","); got != want {
 		t.Fatalf("profile home entries = %q, want %q", got, want)
 	}
 	for name, target := range map[string]string{
@@ -678,13 +683,13 @@ func TestClaudeSkillsInstalledThroughHomeAreIsolatedPerProfile(t *testing.T) {
 		}
 	}
 	fakeClaude := `#!/bin/sh
-home_skill="$HOME/.claude/skills/private.md"
-config_skill="$CLAUDE_CONFIG_DIR/skills/private.md"
+test -z "$CLAUDE_CONFIG_DIR" || exit 1
+skill="$HOME/.claude/skills/private.md"
 if [ "$1" = install ]; then
-	mkdir -p "$(dirname "$home_skill")"
-	printf 'private skill' > "$home_skill"
+	mkdir -p "$(dirname "$skill")"
+	printf 'private skill' > "$skill"
 fi
-if [ -e "$config_skill" ]; then
+if [ -e "$skill" ]; then
 	printf 'skill=present\n'
 else
 	printf 'skill=absent\n'

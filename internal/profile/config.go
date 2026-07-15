@@ -11,6 +11,7 @@ import (
 type Config struct {
 	Proxy        map[string]string `json:"proxy,omitempty"`
 	Integrations map[string]bool   `json:"integrations,omitempty"`
+	Skills       []string          `json:"skills,omitempty"`
 }
 
 // LoadConfig reads the profile's configuration; a missing file means an

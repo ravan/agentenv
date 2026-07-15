@@ -40,7 +40,7 @@ func New(options Options) *cli.Command {
 		integrationCommand("enable", options),
 		integrationCommand("disable", options),
 		proxyCommand(options),
-		codexPluginCommand(options),
+		skillsCommand(options),
 	}
 	for _, agent := range profile.Agents {
 		commands = append(commands, agentCommand(agent, options))

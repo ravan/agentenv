@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/ravan/agentenv/internal/cliapp"
@@ -50,32 +51,29 @@ func TestFirstProfileAdoptsExistingFileBasedOAuthCredentials(t *testing.T) {
 	}
 }
 
-func TestFirstProfileAdoptsKeychainClaudeCredentials(t *testing.T) {
+func TestProfileHomeSharesTheRealLoginKeychain(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("the login keychain is shared through HOME only on macOS")
+	}
 	home := t.TempDir()
-	binDir := filepath.Join(home, "bin")
-	if err := os.MkdirAll(binDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	credential := `{"claudeAiOauth":{"accessToken":"keychain-claude"}}`
-	fakeSecurity := "#!/bin/sh\ntest \"$1\" = find-generic-password || exit 1\nprintf '%s\\n' '" + credential + "'\n"
-	if err := os.WriteFile(filepath.Join(binDir, "security"), []byte(fakeSecurity), 0o700); err != nil {
-		t.Fatal(err)
-	}
 	t.Setenv("HOME", home)
 	t.Setenv("AGENTENV_HOME", "")
-	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	command := cliapp.New(cliapp.Options{Stdout: &bytes.Buffer{}})
 	if err := command.Run(context.Background(), []string{"agentenv", "new", "default"}); err != nil {
 		t.Fatalf("new profile: %v", err)
 	}
 
-	got, err := os.ReadFile(filepath.Join(home, ".agent-profiles", "default", "claude", ".credentials.json"))
-	if err != nil {
-		t.Fatalf("read adopted credentials: %v", err)
+	profileHome := filepath.Join(home, ".agent-profiles", "default", "home")
+	links := map[string]string{
+		filepath.Join(profileHome, "Library", "Keychains"):                               filepath.Join(home, "Library", "Keychains"),
+		filepath.Join(profileHome, "Library", "Preferences", "com.apple.security.plist"): filepath.Join(home, "Library", "Preferences", "com.apple.security.plist"),
 	}
-	if string(got) != credential {
-		t.Fatalf("adopted credentials = %q, want %q", got, credential)
+	for link, target := range links {
+		got, err := os.Readlink(link)
+		if err != nil || got != target {
+			t.Fatalf("keychain link %s = %q, %v; want %q", link, got, err, target)
+		}
 	}
 }
 
@@ -204,7 +202,7 @@ func TestClaudeLaunchSeedsLoginIntoAnExistingProfile(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(projectRoot, ".agentenv"), []byte("default\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	fakeClaude := "#!/bin/sh\ntest ! -e \"$CLAUDE_CONFIG_DIR/settings.json\" && grep -q existing-theme \"$CLAUDE_CONFIG_DIR/.claude.json\"\n"
+	fakeClaude := "#!/bin/sh\ntest ! -e \"$HOME/.claude/settings.json\" && grep -q existing-theme \"$HOME/.claude/.claude.json\"\n"
 	if err := os.WriteFile(filepath.Join(binDir, "claude"), []byte(fakeClaude), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -340,7 +338,7 @@ func TestClaudeLaunchRestoresADeletedCredentialLink(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(projectRoot, ".agentenv"), []byte("default\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	fakeClaude := "#!/bin/sh\ngrep -q shared-claude \"$CLAUDE_CONFIG_DIR/.credentials.json\"\n"
+	fakeClaude := "#!/bin/sh\ngrep -q shared-claude \"$HOME/.claude/.credentials.json\"\n"
 	if err := os.WriteFile(filepath.Join(binDir, "claude"), []byte(fakeClaude), 0o700); err != nil {
 		t.Fatal(err)
 	}

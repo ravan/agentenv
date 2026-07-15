@@ -49,6 +49,13 @@ func guardCommand(options Options) *cli.Command {
 				}{Continue: true})
 			}
 			expectedHome := filepath.Join(options.ProfileRoot, active, agent.Name)
+			requiredHome := fmt.Sprintf("%s=%s", agent.HomeVariable, expectedHome)
+			if agent.ClearHomeVariable {
+				// The composed home routes the agent's default location
+				// into expectedHome; the variable itself must stay unset.
+				expectedHome = ""
+				requiredHome = fmt.Sprintf("an unset %s", agent.HomeVariable)
+			}
 			actualHome := os.Getenv(agent.HomeVariable)
 			expectedPrivateHome := filepath.Join(options.ProfileRoot, active, "home")
 			actualPrivateHome := os.Getenv("HOME")
@@ -58,7 +65,7 @@ func guardCommand(options Options) *cli.Command {
 				SystemMessage string `json:"systemMessage,omitempty"`
 			}{Continue: actualHome == expectedHome && actualPrivateHome == expectedPrivateHome}
 			if !result.Continue {
-				result.StopReason = fmt.Sprintf("project selects profile %q and requires %s=%s and HOME=%s; got %s=%q and HOME=%q", active, agent.HomeVariable, expectedHome, expectedPrivateHome, agent.HomeVariable, actualHome, actualPrivateHome)
+				result.StopReason = fmt.Sprintf("project selects profile %q and requires %s and HOME=%s; got %s=%q and HOME=%q", active, requiredHome, expectedPrivateHome, agent.HomeVariable, actualHome, actualPrivateHome)
 				result.SystemMessage = fmt.Sprintf("%s was launched outside agentenv profile %q. Exit and relaunch with `agentenv %s`.", display, active, agent.Name)
 			}
 			if err := json.NewEncoder(options.Stdout).Encode(result); err != nil {

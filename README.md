@@ -56,19 +56,22 @@ add it to the project's ignore file when it is personal. A selection affects
 future launches only: an already-running agent keeps the profile it started
 with. Restart agents after changing profiles.
 
-Verify the environment from a newly launched profiled session. Each agent has a
-matching configuration variable, and both share the composed `HOME`:
+Verify the environment from a newly launched profiled session:
 
 ```sh
 printf '%s\n' "$CODEX_HOME"          # agentenv codex
-printf '%s\n' "$CLAUDE_CONFIG_DIR"   # agentenv claude
+printf '%s\n' "$CLAUDE_CONFIG_DIR"   # agentenv claude — must be empty
 printf '%s\n' "$HOME"                # both
 ```
 
 `CODEX_HOME` must name `<profile-root>/<profile>/codex`, `CLAUDE_CONFIG_DIR`
-must name `<profile-root>/<profile>/claude`, and `HOME` must name
-`<profile-root>/<profile>/home`. If a relevant variable is empty or points to
-the real home, exit immediately and correct the launcher.
+must be empty, and `HOME` must name `<profile-root>/<profile>/home`. Claude
+finds the profile through the composed home's `~/.claude` alias instead of
+`CLAUDE_CONFIG_DIR`: Claude Code re-keys its macOS keychain service with a
+hash of that variable, so setting it would give every profile a separate
+OAuth login instead of the shared one. If `CODEX_HOME` or `HOME` is empty or
+points to the real home, or `CLAUDE_CONFIG_DIR` is set, exit immediately and
+correct the launcher.
 
 Use the default profile whenever you want a clean baseline:
 
@@ -98,10 +101,10 @@ When an agent is launched, `agentenv` searches the current directory and its
 parents for a `.agentenv` selection, then sets the matching configuration root
 and a composed profile home:
 
-| Command | Environment variable | Profile directory |
+| Command | Route into the profile | Profile directory |
 | --- | --- | --- |
-| `agentenv codex` | `CODEX_HOME` | `<profile-root>/<profile>/codex` |
-| `agentenv claude` | `CLAUDE_CONFIG_DIR` | `<profile-root>/<profile>/claude` |
+| `agentenv codex` | `CODEX_HOME` variable | `<profile-root>/<profile>/codex` |
+| `agentenv claude` | `$HOME/.claude` alias (`CLAUDE_CONFIG_DIR` cleared) | `<profile-root>/<profile>/claude` |
 
 Both commands set `HOME` and `USERPROFILE` to
 `<profile-root>/<profile>/home`. `HOMEDRIVE`, `HOMEPATH`, the XDG config, cache,
@@ -200,8 +203,8 @@ closed when a selected project is launched with the wrong profile environment.
 ### Reject accidental global Claude launches
 
 Claude Code supports `SessionStart` hooks. The same guard stops a session when
-its working directory selects an agentenv profile but its `CLAUDE_CONFIG_DIR`
-or `HOME` does not match that profile.
+its working directory selects an agentenv profile but its `HOME` does not
+match that profile or `CLAUDE_CONFIG_DIR` is set.
 
 First find the absolute executable path:
 
@@ -294,15 +297,17 @@ Treat the two mechanisms as complementary features:
 - Install from a local or Git-backed marketplace when the plugin must exist in
   only the selected profile.
 
-The `codex-plugin` command runs Codex's non-interactive plugin CLI inside the
-selected profile, so profile-local installations never require entering an
-agent session:
+For distributing skills across profiles, prefer the curated skills workflow
+above — it replaces the plugin route for that use case. When a plugin ships
+non-skill functionality, run Codex's non-interactive plugin CLI inside the
+selected profile with `agentenv run`, so profile-local installations never
+require entering an agent session:
 
 ```sh
-agentenv codex-plugin marketplace add https://github.com/obra/superpowers
-agentenv codex-plugin add superpowers@superpowers-dev
-agentenv codex-plugin list
-agentenv codex-plugin remove superpowers@superpowers-dev
+agentenv run codex -- codex plugin marketplace add https://github.com/obra/superpowers
+agentenv run codex -- codex plugin add superpowers@superpowers-dev
+agentenv run codex -- codex plugin list
+agentenv run codex -- codex plugin remove superpowers@superpowers-dev
 ```
 
 For a plugin available both remotely and from a Git marketplace, pick one
@@ -327,9 +332,9 @@ running their own installers inside a profile environment writes to the
 profile instead of the real global configuration.
 
 `enable` and `disable` wrap exactly that. They resolve the active profile,
-swap in the profile environment (`HOME`, `CODEX_HOME`, `CLAUDE_CONFIG_DIR`),
-and run the tool's native installer or uninstaller for both the Claude and
-Codex homes:
+swap in the profile environment (`HOME`, `CODEX_HOME`, with
+`CLAUDE_CONFIG_DIR` cleared), and run the tool's native installer or
+uninstaller for both the Claude and Codex homes:
 
 ```sh
 agentenv use superpowers
@@ -349,6 +354,59 @@ A successful enable or disable records the integration state in the
 profile's `config.json`, and `agentenv current` reports it alongside the
 proxy URLs. State changed outside agentenv (for example running `rtk init`
 by hand inside the profile) is not detected.
+
+## Curated skills
+
+Profiles can share one curated set of [agent skills](https://agentskills.io).
+Upstream skill packages are installed once into a golden git repository at
+`<profile root>/shared/skills`, your edits to them live there as commits, and
+each profile links its whitelisted skills into the locations both agents read:
+`<profile>/claude/skills` for Claude Code and the private home's
+`~/.agents/skills` for Codex. Project repositories stay untouched.
+
+```sh
+agentenv skills add mattpocock/skills          # install into the golden repo
+agentenv skills add acme/skills -s one-skill   # extra args reach 'npx skills add'
+agentenv use superpowers
+agentenv skills enable wayfinder code-review   # whitelist for the active profile
+agentenv skills list                           # ● enabled / ○ available
+```
+
+The golden repository keeps upstream and your curation apart with two
+branches. `upstream` only ever receives pristine `npx skills` output; `main`
+is `upstream` plus your edits as ordinary commits. Edit a skill through any
+profile's link (the symlink resolves into the golden repo), then persist it:
+
+```sh
+agentenv skills save -m "tighten wayfinder prompts"
+```
+
+Updates are deliberately blind — the installer runs on `upstream`, then your
+curated commits are replayed on top with `git rebase`:
+
+```sh
+agentenv skills update                 # only skills enabled in some profile (fast)
+agentenv skills update --all           # every installed skill (slower)
+agentenv skills update wayfinder tdd   # only the named skills
+```
+
+A bare `agentenv skills update` refreshes just the skills enabled in at least
+one profile, because the upstream `skills` installer updates skills one at a
+time and a full store can hold dozens. Installed-but-disabled skills are left
+untouched until you run `--all` or name them. If no profile enables anything,
+the command reports it and does nothing.
+
+When upstream rewrites the same lines you curated, the rebase stops with
+ordinary git conflict markers. Resolve them in `<profile root>/shared/skills`
+with your usual tooling (lazygit, `git`), run `git rebase --continue`, and
+you are back on `main` with both changes. `agentenv skills status` shows the
+pending rebase, unsaved edits, and your curated commits at any time.
+
+Skill links are reconciled on every profiled launch: switching a project to
+another profile removes the previous profile's whitelisted skills and links
+the new profile's on the next `agentenv codex` or `agentenv claude`. Links
+agentenv did not create — your own project-local skills or hand-made
+symlinks — are never touched.
 
 ## Agent proxy URLs
 
@@ -370,8 +428,8 @@ agentenv proxy unset codex
 ```
 
 An absolute `http` or `https` URL is required. The setting applies to
-`agentenv codex`, `agentenv claude`, `agentenv run`, and `agentenv
-codex-plugin` launches in that profile. When no proxy is configured, any
+`agentenv codex`, `agentenv claude`, and `agentenv run` launches in that
+profile. When no proxy is configured, any
 endpoint variable already present in the shell is inherited unchanged, so a
 profile without a proxy keeps the default provider endpoint.
 
@@ -383,7 +441,8 @@ Profiles live under `~/.agent-profiles` by default:
 ~/.agent-profiles/
 ├── shared/
 │   ├── codex-auth.json
-│   └── claude-credentials.json
+│   ├── claude-credentials.json
+│   └── skills/                    golden skills repository (git)
 ├── default/
 │   ├── config.json
 │   ├── codex/
@@ -429,10 +488,19 @@ an agent's private plugin metadata.
 
 ## Shared OAuth
 
-When Codex or Claude uses the operating system credential store, OAuth is
-already shared independently of the selected configuration directory. For
-file-based credential storage, `agentenv` links these agent-specific paths to
-the shared store:
+On macOS, Claude Code stores its OAuth login in the login keychain, which the
+Security framework locates through `$HOME/Library`. Because a profiled launch
+replaces `HOME`, the composed home exposes the real keychain with two links:
+
+```text
+<profile>/home/Library/Keychains                            -> ~/Library/Keychains
+<profile>/home/Library/Preferences/com.apple.security.plist -> ~/Library/Preferences/com.apple.security.plist
+```
+
+Every profile therefore reads and writes the same keychain item as a direct
+launch — one rotating refresh token, no stale copies. For file-based
+credential storage, `agentenv` links these agent-specific paths to the shared
+store:
 
 ```text
 <profile>/codex/auth.json          -> ../../shared/codex-auth.json
@@ -450,6 +518,12 @@ direct Codex and Claude installations therefore remain signed in, and their
 credential files are left in place. Agent launches repeat this check so profiles
 created by an earlier `agentenv` release are upgraded automatically.
 
+Keychain-held logins are never copied into the shared store: a copied token
+goes stale as the agent rotates its refresh token, and replaying a stale
+refresh token makes the OAuth provider revoke the whole login. If an earlier
+`agentenv` release left a `shared/claude-credentials.json` snapshot on macOS,
+delete it.
+
 The shared files contain refresh and access tokens. They are created with
 owner-only permissions; do not commit, copy into a project, or expose them in
 logs.
@@ -463,11 +537,9 @@ agentenv delete <name>     permanently remove a profile
 agentenv use <name>        select a profile in the current directory
 agentenv activate <name>   alias for use
 agentenv current           summarize the active profile: name, rtk/tokensave
-                           integration state, and agent proxy URLs
+                           integration state, agent proxy URLs, and skills
 agentenv run <agent> -- <command> [args...]
                            run a wrapper inside the selected agent profile
-agentenv codex-plugin <command> [args...]
-                           manage profile-local Codex plugins (wraps 'codex plugin')
 agentenv enable <rtk|tokensave>
                            install a helper tool integration into the profile
 agentenv disable <rtk|tokensave>
@@ -477,6 +549,18 @@ agentenv proxy set <codex|claude> <url>
 agentenv proxy unset <codex|claude>
                            remove the agent's proxy URL from the profile
 agentenv proxy show        print the proxy URLs configured for the profile
+agentenv skills add <owner/repo> [options]
+                           install a skill package into the shared golden repo
+agentenv skills update [skills...]
+                           update upstream skills and replay curated edits
+agentenv skills save [-m <message>]
+                           commit skill edits as a curated change
+agentenv skills enable <skill>...
+                           link shared skills into the active profile
+agentenv skills disable <skill>...
+                           remove shared skills from the active profile
+agentenv skills list       list shared skills and their state in the profile
+agentenv skills status     summarize the golden repo: branch, rebase, edits
 agentenv codex [args...]   launch Codex with the selected profile
 agentenv claude [args...]  launch Claude Code with the selected profile
 ```

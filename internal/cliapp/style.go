@@ -14,6 +14,7 @@ const (
 	iconRtk       = "" // nf-fa-bolt
 	iconTokensave = "" // nf-fa-share_alt
 	iconProxy     = "" // nf-fa-plug
+	iconSkills    = "" // nf-fa-book
 )
 
 // integrationIcons decorates each helper tool in summaries.

@@ -84,7 +84,7 @@ func runIntegrationSteps(ctx context.Context, active, profilePath string, steps 
 		if err != nil {
 			return err
 		}
-		environment = profile.ReplaceEnvironment(environment, agent.HomeVariable, home)
+		environment = agent.HomeEnvironment(environment, home)
 	}
 	if err := profile.PrepareHome(profilePath); err != nil {
 		return fmt.Errorf("prepare home for profile %q: %w", active, err)

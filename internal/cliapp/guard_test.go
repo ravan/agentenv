@@ -154,11 +154,92 @@ func TestClaudeGuardStopsAnUnprofiledLaunchInASelectedProject(t *testing.T) {
 	if result.Continue {
 		t.Fatalf("guard allowed an unprofiled Claude launch: %+v", result)
 	}
-	wantHome := filepath.Join(profileRoot, "default", "claude")
-	if !strings.Contains(result.StopReason, wantHome) ||
-		!strings.Contains(result.StopReason, "CLAUDE_CONFIG_DIR") ||
+	wantPrivateHome := filepath.Join(profileRoot, "default", "home")
+	if !strings.Contains(result.StopReason, wantPrivateHome) ||
+		!strings.Contains(result.StopReason, "an unset CLAUDE_CONFIG_DIR") ||
 		!strings.Contains(result.SystemMessage, "agentenv claude") {
-		t.Fatalf("guard result = %+v, want expected home %q and relaunch guidance", result, wantHome)
+		t.Fatalf("guard result = %+v, want private home %q and relaunch guidance", result, wantPrivateHome)
+	}
+}
+
+// A profiled Claude launch must keep CLAUDE_CONFIG_DIR unset: Claude Code
+// re-keys its macOS keychain service with a hash of the variable, which
+// would split the OAuth login away from the shared one.
+func TestClaudeGuardStopsALaunchWithTheConfigDirVariableSet(t *testing.T) {
+	root := t.TempDir()
+	profileRoot := filepath.Join(root, "profiles")
+	projectRoot := filepath.Join(root, "project")
+	profilePath := filepath.Join(profileRoot, "default")
+	if err := os.MkdirAll(filepath.Join(profilePath, "claude"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(projectRoot, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, ".agentenv"), []byte("default\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", filepath.Join(profilePath, "home"))
+	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(profilePath, "claude"))
+	input := `{"cwd":` + strconv.Quote(projectRoot) + `,"hook_event_name":"SessionStart","source":"startup"}`
+	var stdout bytes.Buffer
+	command := cliapp.New(cliapp.Options{
+		ProfileRoot: profileRoot,
+		Stdin:       strings.NewReader(input),
+		Stdout:      &stdout,
+	})
+
+	if err := command.Run(context.Background(), []string{"agentenv", "guard", "claude"}); err != nil {
+		t.Fatalf("guard Claude launch: %v", err)
+	}
+	var result struct {
+		Continue   bool   `json:"continue"`
+		StopReason string `json:"stopReason"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode guard output %q: %v", stdout.String(), err)
+	}
+	if result.Continue || !strings.Contains(result.StopReason, "an unset CLAUDE_CONFIG_DIR") {
+		t.Fatalf("guard result = %+v, want rejection requiring an unset CLAUDE_CONFIG_DIR", result)
+	}
+}
+
+func TestClaudeGuardAllowsAProfiledLaunch(t *testing.T) {
+	root := t.TempDir()
+	profileRoot := filepath.Join(root, "profiles")
+	projectRoot := filepath.Join(root, "project")
+	profilePath := filepath.Join(profileRoot, "default")
+	if err := os.MkdirAll(filepath.Join(profilePath, "claude"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(projectRoot, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, ".agentenv"), []byte("default\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", filepath.Join(profilePath, "home"))
+	os.Unsetenv("CLAUDE_CONFIG_DIR")
+	input := `{"cwd":` + strconv.Quote(projectRoot) + `,"hook_event_name":"SessionStart","source":"startup"}`
+	var stdout bytes.Buffer
+	command := cliapp.New(cliapp.Options{
+		ProfileRoot: profileRoot,
+		Stdin:       strings.NewReader(input),
+		Stdout:      &stdout,
+	})
+
+	if err := command.Run(context.Background(), []string{"agentenv", "guard", "claude"}); err != nil {
+		t.Fatalf("guard Claude launch: %v", err)
+	}
+	var result struct {
+		Continue   bool   `json:"continue"`
+		StopReason string `json:"stopReason"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode guard output %q: %v", stdout.String(), err)
+	}
+	if !result.Continue {
+		t.Fatalf("guard stopped a correctly profiled Claude launch: %+v", result)
 	}
 }
 

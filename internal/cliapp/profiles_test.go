@@ -156,7 +156,8 @@ func TestCurrentPrintsTheProfileSelectedByAParentProject(t *testing.T) {
 		"   rtk           ○ disabled\n" +
 		"   tokensave     ○ disabled\n" +
 		"   codex proxy   (not set)\n" +
-		"   claude proxy  (not set)\n"
+		"   claude proxy  (not set)\n" +
+		"   skills        (none)\n"
 	if got := stdout.String(); got != want {
 		t.Fatalf("stdout = %q, want %q", got, want)
 	}
@@ -203,7 +204,8 @@ func TestCurrentSummarizesIntegrationsAndProxies(t *testing.T) {
 		"   rtk           ● enabled\n" +
 		"   tokensave     ○ disabled\n" +
 		"   codex proxy   (not set)\n" +
-		"   claude proxy  http://localhost:4000/anthropic\n"
+		"   claude proxy  http://localhost:4000/anthropic\n" +
+		"   skills        (none)\n"
 	if got := stdout.String(); got != want {
 		t.Fatalf("stdout = %q, want %q", got, want)
 	}

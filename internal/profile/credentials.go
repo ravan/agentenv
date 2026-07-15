@@ -1,27 +1,26 @@
 package profile
 
 import (
-	"bytes"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 )
 
 // credentialLink maps an agent's credential file to its shared counterpart
 // so OAuth logins are reused across profiles. Agents that keep their login
-// in the macOS keychain instead of a file name the keychain service to
-// adopt it from.
+// in the macOS keychain share it directly through the composed home's
+// Library links instead; copying a keychain token into a file would go
+// stale as the agent rotates its refresh token, and replaying the stale
+// token revokes the whole login.
 type credentialLink struct {
-	tool            string
-	profileFile     string
-	sharedFile      string
-	keychainService string
+	tool        string
+	profileFile string
+	sharedFile  string
 }
 
 var sharedCredentialLinks = []credentialLink{
 	{tool: "codex", profileFile: "auth.json", sharedFile: "codex-auth.json"},
-	{tool: "claude", profileFile: ".credentials.json", sharedFile: "claude-credentials.json", keychainService: "Claude Code-credentials"},
+	{tool: "claude", profileFile: ".credentials.json", sharedFile: "claude-credentials.json"},
 }
 
 // AdoptExistingCredentials seeds the shared credential store from the
@@ -47,10 +46,7 @@ func (s Store) AdoptExistingCredentials() error {
 		existingPath := filepath.Join(home, "."+credential.tool, credential.profileFile)
 		contents, err := os.ReadFile(existingPath)
 		if os.IsNotExist(err) {
-			contents = keychainCredential(credential.keychainService)
-			if contents == nil {
-				continue
-			}
+			continue
 		} else if err != nil {
 			return fmt.Errorf("read existing %s credentials: %w", credential.tool, err)
 		}
@@ -84,25 +80,6 @@ func (s Store) EnsureSharedCredentialLinks(profilePath string) error {
 		}
 	}
 	return nil
-}
-
-// keychainCredential reads an agent's OAuth credential from the macOS
-// keychain, where the agent stores it when launched against the user's real
-// home. A missing item, an empty service name, or a platform without the
-// security tool all mean no credential.
-func keychainCredential(service string) []byte {
-	if service == "" {
-		return nil
-	}
-	output, err := exec.Command("security", "find-generic-password", "-s", service, "-w").Output()
-	if err != nil {
-		return nil
-	}
-	credential := bytes.TrimSpace(output)
-	if len(credential) == 0 {
-		return nil
-	}
-	return credential
 }
 
 // RestoreSharedCredential re-links the agent's credential file in agentHome

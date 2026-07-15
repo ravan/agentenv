@@ -117,8 +117,8 @@ description: Proves that Codex plugin state stays in one agentenv profile.
 	run(firstProject, "new", "second")
 	run(firstProject, "use", "first")
 	run(secondProject, "use", "second")
-	run(firstProject, "codex-plugin", "marketplace", "add", marketplaceRoot, "--json")
-	run(firstProject, "codex-plugin", "add", "private@agentenv-test", "--json")
+	run(firstProject, "run", "codex", "--", "codex", "plugin", "marketplace", "add", marketplaceRoot, "--json")
+	run(firstProject, "run", "codex", "--", "codex", "plugin", "add", "private@agentenv-test", "--json")
 
 	type plugin struct {
 		Name      string `json:"name"`

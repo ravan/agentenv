@@ -7,9 +7,10 @@ import (
 )
 
 // PrepareHome builds the profile's composed private home: an empty HOME
-// containing only symlink aliases into the profile's agent directories and a
-// private .agents directory. Existing profile-owned entries are preserved,
-// while legacy passthrough links into the real home are removed.
+// containing only symlink aliases into the profile's agent directories, a
+// private .agents directory, and, on macOS, links that expose the real login
+// keychain. Existing profile-owned entries are preserved, while legacy
+// passthrough links into the real home are removed.
 func PrepareHome(profilePath string) error {
 	profileHome := filepath.Join(profilePath, "home")
 	info, err := os.Lstat(profileHome)
@@ -69,7 +70,7 @@ func PrepareHome(profilePath string) error {
 		return fmt.Errorf("reserved home entry .agents is not a directory")
 	}
 
-	return nil
+	return linkSystemKeychain(profileHome)
 }
 
 // removeLegacyHomePassthroughs deletes symlinks that older agentenv versions

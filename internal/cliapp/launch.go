@@ -51,23 +51,6 @@ func runCommand(options Options) *cli.Command {
 	}
 }
 
-func codexPluginCommand(options Options) *cli.Command {
-	return &cli.Command{
-		Name:            "codex-plugin",
-		Usage:           "manage profile-local Codex plugins in the active profile",
-		ArgsUsage:       "<add|list|remove|marketplace> [arguments...]",
-		SkipFlagParsing: true,
-		Action: func(ctx context.Context, command *cli.Command) error {
-			arguments := command.Args().Slice()
-			if len(arguments) == 0 {
-				return cli.Exit("plugin command is required", 2)
-			}
-			codex, _ := profile.AgentByName("codex")
-			return runProfileProcess(ctx, codex, "codex", append([]string{"plugin"}, arguments...), options)
-		},
-	}
-}
-
 // runProfileProcess executes a command inside the active profile: the
 // agent's home variable, the composed private home, and any configured proxy
 // endpoint all point into the profile. After the process exits, refreshed
@@ -100,9 +83,14 @@ func runProfileProcess(ctx context.Context, agent profile.Agent, executable stri
 	if err != nil {
 		return fmt.Errorf("configure profile %q: %w", active, err)
 	}
+	missingSkills, err := profile.SyncSkills(profilePath, goldenRepo(options).CanonicalDir(), config.Skills)
+	if err != nil {
+		return fmt.Errorf("sync skills for profile %q: %w", active, err)
+	}
+	warnMissingSkills(options, active, missingSkills)
 	process := exec.CommandContext(ctx, executable, arguments...)
 	process.Dir = options.WorkingDir
-	process.Env = profile.ReplaceEnvironment(os.Environ(), agent.HomeVariable, home)
+	process.Env = agent.HomeEnvironment(os.Environ(), home)
 	process.Env = profile.ReplaceEnvironment(process.Env, "AGENTENV_HOME", options.ProfileRoot)
 	if proxyURL := config.Proxy[agent.Name]; proxyURL != "" {
 		process.Env = profile.ReplaceEnvironment(process.Env, agent.ProxyVariable, proxyURL)

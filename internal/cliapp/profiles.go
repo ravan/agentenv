@@ -135,6 +135,11 @@ func currentCommand(options Options) *cli.Command {
 				}
 				rows = append(rows, row{iconProxy, agent.Name + " proxy", value})
 			}
+			skillsValue := style.dim("(none)")
+			if len(config.Skills) > 0 {
+				skillsValue = style.cyan(strings.Join(config.Skills, ", "))
+			}
+			rows = append(rows, row{iconSkills, "skills", skillsValue})
 			width := 0
 			for _, r := range rows {
 				width = max(width, len(r.label))

@@ -51,7 +51,7 @@ printf 'args=%s home=%s codex_home=%s claude_config_dir=%s\n' "$*" "$HOME" "$COD
 	profilePath := filepath.Join(profileRoot, "superpowers")
 	environment := " home=" + filepath.Join(profilePath, "home") +
 		" codex_home=" + filepath.Join(profilePath, "codex") +
-		" claude_config_dir=" + filepath.Join(profilePath, "claude") + "\n"
+		" claude_config_dir=\n"
 	want := "args=init -g --auto-patch" + environment +
 		"args=init -g --codex" + environment
 	if got := stdout.String(); got != want {
